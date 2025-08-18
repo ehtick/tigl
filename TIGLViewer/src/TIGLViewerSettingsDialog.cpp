@@ -27,6 +27,11 @@
 
 #include "TIGLViewerMaterials.h"
 
+#include <QFileDialog>
+#include <QMessageBox>
+#include "TIGLViewerSettingsDialog.h"
+
+
 #define WORST_TESSELATION 0.01
 #define BEST_TESSELATION 0.00001
 
@@ -62,6 +67,8 @@ TIGLViewerSettingsDialog::TIGLViewerSettingsDialog(TIGLViewerSettings& settings,
     connect(buttonShapeSymmetryColorChoser, SIGNAL(clicked()), this, SLOT(onShapeSymmetryColorChoserPushed()));
     connect(settingsList, SIGNAL(currentRowChanged(int)), this, SLOT(onSettingsListChanged(int)));
     connect(btnRestoreDefaults, SIGNAL(clicked(bool)), this, SLOT(restoreDefaults()));
+    connect(browseTemplateDirButton, SIGNAL(clicked(bool)), this, SLOT(onBrowseTemplateDir()));
+    connect(browseProfilesDBButton, SIGNAL(clicked(bool)), this, SLOT(onBrowseProfilesDB()));
 }
 
 void TIGLViewerSettingsDialog::onComboBoxIndexChanged(const QString& index)
@@ -110,6 +117,9 @@ void TIGLViewerSettingsDialog::onSettingsAccepted()
     _settings.setNumberOfUIsolinesPerFace(numUIsoLinesSB->value());
     _settings.setNumberOfVIsolinesPerFace(numVIsoLinesSB->value());
     _settings.setDrawFaceBoundariesEnabled(cbDrawFaceBoundaries->isChecked());
+
+    _settings.setTemplateDir(templateLineEdit->text());
+    _settings.setProfilesDBPath(profilesDBLineEdit->text());
 }
 
 void TIGLViewerSettingsDialog::updateEntries()
@@ -147,6 +157,9 @@ void TIGLViewerSettingsDialog::updateEntries()
     enumerateFaceCB->setChecked(_settings.enumerateFaces());
     numUIsoLinesSB->setValue(_settings.numFaceUIsosForDisplay());
     numVIsoLinesSB->setValue(_settings.numFaceVIsosForDisplay());
+
+    templateLineEdit->setText(_settings.templateDir().absolutePath());
+    profilesDBLineEdit->setText(_settings.profilesDBPath());
     cbDrawFaceBoundaries->setChecked(_settings.drawFaceBoundaries());
 
     auto i(tiglMaterials::materialMap.begin());
@@ -231,3 +244,20 @@ void TIGLViewerSettingsDialog::restoreDefaults()
     updateEntries();
 }
 
+void TIGLViewerSettingsDialog::onBrowseTemplateDir()
+{
+    QDir newDir = QFileDialog::getExistingDirectory(this, "Choose template directory", _settings.templateDir().path());
+
+    templateLineEdit->setText(newDir.absolutePath());
+}
+
+void TIGLViewerSettingsDialog::onBrowseProfilesDB()
+{
+    QString newFile =
+        QFileDialog::getOpenFileName(this, "Choose a profile DB file. Remark, the profile DB file needs to have the same "
+                                           "structure as a CPACS \"profiles\" section and have .xml suffix.", _settings.profilesDBPath());
+
+    if (!newFile.isEmpty()) {
+        profilesDBLineEdit->setText(newFile);
+    }
+}

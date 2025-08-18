@@ -52,14 +52,6 @@ int main(int argc, char *argv[])
 
     app.loadStyle();
 
-#if defined __linux__
-    // we need to set us locale as we use "." for decimal point
-    qputenv("LC_NUMERIC", "C");
-    setlocale(LC_NUMERIC, "C");
-#elif defined __APPLE__
-    setlocale(LC_NUMERIC, "C");
-#endif
-    
     // set shader file location
     QString shaderDir = QCoreApplication::applicationDirPath();
 #ifdef __APPLE__

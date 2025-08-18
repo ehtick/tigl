@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>783</width>
-    <height>578</height>
+    <width>1458</width>
+    <height>1197</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -145,6 +145,8 @@
     <addaction name="setBackgroundAction"/>
     <addaction name="separator"/>
     <addaction name="saveAction"/>
+    <addaction name="saveAsAction"/>
+    <addaction name="exportAction"/>
     <addaction name="saveScreenshotAction"/>
     <addaction name="tiglMenu"/>
     <addaction name="closeAction"/>
@@ -260,6 +262,8 @@
      <addaction name="viewZoomOutAction"/>
      <addaction name="separator"/>
      <addaction name="showConsoleAction"/>
+     <addaction name="showTreeAction"/>
+     <addaction name="showModificatorAction"/>
      <addaction name="showWireframeAction"/>
      <addaction name="showReflectionLinesAction"/>
     </widget>
@@ -301,6 +305,7 @@
     <property name="title">
      <string>&amp;Edit</string>
     </property>
+    <addaction name="standardizeAction"/>
    </widget>
    <addaction name="fileMenu"/>
    <addaction name="menuEdit"/>
@@ -376,6 +381,18 @@
     </layout>
    </widget>
   </widget>
+  <widget class="QDockWidget" name="editorDockWidget">
+   <attribute name="dockWidgetArea">
+    <number>2</number>
+   </attribute>
+   <widget class="ModificatorContainerWidget" name="modificatorContainerWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="treeDockWidget">
+   <attribute name="dockWidgetArea">
+    <number>2</number>
+   </attribute>
+   <widget class="CPACSTreeWidget" name="treeWidget"/>
+  </widget>
   <action name="newAction">
    <property name="text">
     <string>&amp;New</string>
@@ -420,19 +437,12 @@
     <string>blubb</string>
    </property>
   </action>
-  <action name="saveAction">
-   <property name="icon">
-    <iconset resource="TIGLViewer.qrc">
-     <normaloff>:/gfx/document-save.png</normaloff>:/gfx/document-save.png</iconset>
-   </property>
+  <action name="exportAction">
    <property name="text">
-    <string>&amp;Save</string>
+    <string>&amp;Export</string>
    </property>
    <property name="toolTip">
-    <string>Save the document to disk</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+S</string>
+    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Export the document to disk&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
    </property>
   </action>
   <action name="printAction">
@@ -1436,6 +1446,69 @@
     <string>Show all Fuselages and Wings with Duct Cutouts</string>
    </property>
   </action>
+  <action name="showModificatorAction">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Editor</string>
+   </property>
+   <property name="toolTip">
+    <string>Show editor interface</string>
+   </property>
+   <property name="shortcut">
+    <string>Alt+Shift+M</string>
+   </property>
+  </action>
+  <action name="showTreeAction">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Tree</string>
+   </property>
+   <property name="toolTip">
+    <string>show the aircraft tree widget</string>
+   </property>
+   <property name="shortcut">
+    <string>Alt+M</string>
+   </property>
+  </action>
+  <action name="saveAction">
+   <property name="icon">
+    <iconset resource="TIGLViewer.qrc">
+     <normaloff>:/gfx/document-save.png</normaloff>:/gfx/document-save.png</iconset>
+   </property>
+   <property name="text">
+    <string>Save</string>
+   </property>
+   <property name="toolTip">
+    <string>Save the modifications in the currently opened file</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
+  </action>
+  <action name="saveAsAction">
+   <property name="icon">
+    <iconset resource="TIGLViewer.qrc">
+     <normaloff>:/gfx/document-save.png</normaloff>:/gfx/document-save.png</iconset>
+   </property>
+   <property name="text">
+    <string>Save as</string>
+   </property>
+   <property name="toolTip">
+    <string>Save the current configuration to the specified file</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+S</string>
+   </property>
+  </action>
+  <action name="standardizeAction">
+   <property name="text">
+    <string>Standardize</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>
@@ -1448,6 +1521,18 @@
    <class>Console</class>
    <extends>QPlainTextEdit</extends>
    <header>TiglViewerConsole.h</header>
+  </customwidget>
+  <customwidget>
+   <class>CPACSTreeWidget</class>
+   <extends>QWidget</extends>
+   <header>CPACSTreeWidget.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ModificatorContainerWidget</class>
+   <extends>QWidget</extends>
+   <header>ModificatorContainerWidget.h</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources>

@@ -58,4 +58,39 @@ void ChangeObjectsColor::undo()
 
 }
 
+ModifyTiglObject::ModifyTiglObject(ModificatorManager& manager)
+    : manager(manager)
+{
+    newConfig     = "";
+    oldConfig     = "";
+    isInitialized = false;
+    setText("Creator edition");
+}
+
+void ModifyTiglObject::redo()
+{
+    if (!isInitialized) {
+        initialize();
+        isInitialized = true;
+    }
+    else {
+        manager.updateCpacsConfigurationFromString(newConfig);
+    }
+}
+
+void ModifyTiglObject::undo()
+{
+    manager.updateCpacsConfigurationFromString(oldConfig);
+}
+
+void ModifyTiglObject::initialize()
+{
+    oldConfig = manager.getConfigurationAsString();
+    
+    // write the new version
+    manager.writeCPACS();
+
+    newConfig = manager.getConfigurationAsString();
+}
+
 } // namespace TiGLViewer

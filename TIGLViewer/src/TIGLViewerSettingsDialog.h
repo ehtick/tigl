@@ -49,6 +49,8 @@ private slots:
 
     void onSettingsListChanged(int);
     void restoreDefaults();
+    void onBrowseTemplateDir();
+    void onBrowseProfilesDB();
 
 private:
     double calcTesselationAccu(int value);

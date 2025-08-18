@@ -21,6 +21,7 @@ Changes since last release
   - [#59](https://github.com/RISCSoftware/cpacs_tigl_gen/issues/59)	
     Getters by index and uID are generated now for all Elements in CPACS with Attribute: maxOccur = "unbounded".  This gives users quick
     access to elements and eliminates the need for TIGL developers to customize classes for this purpose.
+  - [#1122](https://github.com/DLR-SC/tigl/issues/1122) Redo and Undo commands now update the CPACS configuration, which was previously only true for modifications using the CPACS Editor UI.
     
 08/02/2025
 
@@ -28,6 +29,12 @@ Changes since last release
   - Implemented the new CPACS fuelTanks.
 
 - Fixes
+  - #1090 Ask the user whether the currently worked on file should be saved before closing. Up to now, the configuration was simply closed resulting in potential data loss.
+
+  - #1096 When a user adds a non-boundary segment to a wing/fuselage, the respective segment is split and a new one is created. After this split, a reordering of the segments is necessary. Otherwise, the segments cannot be lofted and created correctly. That would result in a wrong visualization and errors when trying to build them on user's demand in the tiglviewer.
+For that reason, the CCPACSFuselageSegments::ReorderSegments() and CCPACSWingSegments::ReorderSegments(), respectively, were added within the call of the SplitSegment() function.
+  - #752 When creating a new file out of a template, the CPACSCreator automatically creates a new `.temp` file in the template directory. It might be the case that the user does not have write access to this directory, e.g. when TiGL is not configured and built but just downloaded via the installer. On the other hand it does not seem to be reasonable to directly create and store (!) a new file every time the 'new file' command is activated. Now, no temporary file is created. The content of the wanted template is copied into a string which then will be opened and read by tixi. Only if wanted, the resulting and edited CPACS file is stored.
+  - #1087 CPACSCreator uses a system-wide config file to store (among many others) the path to the profiles database. If TiGL is built in a second configuration on the same system, the first build will determine the path in this config file. If then later the first build (and path) is removed, TiGL will still try to load the database from this path. A check is included, whether the path exists and should overwrite the config file entry when it does not.
 
   - #1094 Fix inconsistent parametrization of super ellipse profiles. Before, the super ellipses ware parametrized by arc length, which resulted in 
     different parameters at the four distinct points of the super ellipse. Potential kinks in two super ellipses were not necessarily connected by a

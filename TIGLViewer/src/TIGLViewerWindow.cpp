@@ -22,9 +22,9 @@
 
 #include <QtGui>
 #include <QFileDialog>
-#include <QtCore/QTextStream>
-#include <QtCore/QFileInfo>
-#include <QtCore/QString>
+#include <QTextStream>
+#include <QFileInfo>
+#include <QString>
 #include <QShortcut>
 #include <QTimer>
 #include <QProcessEnvironment>
@@ -52,8 +52,12 @@
 #include "tigl_config.h"
 #include "api/tigl_version.h"
 #include "CCPACSConfigurationManager.h"
+#include "TIGLViewerNewFileDialog.h"
+#include "StandardizeDialog.h"
+#include <tixicpp.h>
 
 #include <cstdlib>
+#include <filesystem>
 
 namespace
 {
@@ -68,7 +72,7 @@ TIGLViewerWindow::TIGLViewerWindow()
 {
     setupUi(this);
 
-    setTiglWindowTitle(QString("TiGL Viewer %1").arg(TIGL_MAJOR_VERSION));
+    setTiglWindowTitle(QString("CPACS Creator"));
 
     undoStack = new QUndoStack(this);
 
@@ -76,6 +80,7 @@ TIGLViewerWindow::TIGLViewerWindow()
     settingsDialog = new TIGLViewerSettingsDialog(*tiglViewerSettings, this);
 
     myScene  = new TIGLViewerContext(undoStack);
+
     myOCC->setContext(myScene);
 
     // we create a timer to workaround QFileSystemWatcher bug,
@@ -89,10 +94,13 @@ TIGLViewerWindow::TIGLViewerWindow()
     // to catch all events
     openTimer->setInterval(200);
 
+    watcher = nullptr;
+
     //redirect everything to TIGL console, let error messages be printed in red
     stdoutStream = new QDebugStream(std::cout);
     errorStream  = new QDebugStream(std::cerr);
     errorStream->setMarkup("<b><font color=\"red\">","</font></b>");
+
 
     // insert two loggers, one for the log history and one for the console
     CSharedPtr<tigl::CTiglLogSplitter> splitter(new tigl::CTiglLogSplitter);
@@ -117,6 +125,9 @@ TIGLViewerWindow::TIGLViewerWindow()
 
     setAcceptDrops(true);
 
+    // creator init
+    modificatorManager = new ModificatorManager(treeWidget, modificatorContainerWidget, myScene, undoStack) ;
+
     connectSignals();
     createMenus();
     updateMenus();
@@ -126,12 +137,16 @@ TIGLViewerWindow::TIGLViewerWindow()
     statusBar()->showMessage(tr("A context menu is available by right-clicking"));
 
     setMinimumSize(160, 160);
+
+
 }
+
 
 TIGLViewerWindow::~TIGLViewerWindow()
 {
     delete stdoutStream;
     delete errorStream;
+    delete modificatorManager;
 }
 
 void TIGLViewerWindow::dragEnterEvent(QDragEnterEvent * ev)
@@ -191,8 +206,10 @@ void TIGLViewerWindow::setInitialControlFile(const QString& filename)
 void TIGLViewerWindow::newFile()
 {
     statusBar()->showMessage(tr("Invoked File|New"));
-    //myOCC->getView()->ColorScaleErase();
-    myScene->deleteAllObjects();
+    TIGLViewerNewFileDialog newFileDialog( this );
+    if ( newFileDialog.exec() == QDialog::Accepted ){
+        openNewFile(newFileDialog.getNewFileName());
+    }
 }
 
 void TIGLViewerWindow::open()
@@ -210,7 +227,8 @@ void TIGLViewerWindow::open()
                                                     "STEP (*.step *.stp);;"
                                                     "IGES (*.iges *.igs);;"
                                                     "STL  (*.stl);;"
-                                                    "Hotsose Mesh (*.mesh)") );
+                                                    "Hotsose Mesh (*.mesh);;"
+                                                    "All (*)") );
     openFile(fileName);
 }
 
@@ -233,14 +251,41 @@ void TIGLViewerWindow::openScript(const QString& fileName)
     scriptEngine->openFile(fileName);
 }
 
+int TIGLViewerWindow::dialogSaveBeforeClose()
+{
+    QMessageBox msgBox;
+    msgBox.setText("Do you want to save the file before closing?");
+    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    msgBox.setDefaultButton(QMessageBox::Yes);
+
+    return msgBox.exec();
+}
+
 void TIGLViewerWindow::closeConfiguration()
 {
+    // Check whether there were changes in the configuration before asking if the user wants to save
+    if (cpacsConfiguration && cpacsConfiguration->isConfigurationModifiedSinceLastSave()) {
+        int selection = dialogSaveBeforeClose();
+
+        if (selection == QMessageBox::Cancel) {
+            return;
+        }
+        else if (selection == QMessageBox::Yes) {
+            save();
+        }
+    }
+
+    modificatorManager->setCPACSConfiguration(nullptr); // it will also reset the treeview
     if (cpacsConfiguration) {
         getScene()->deleteAllObjects();
         delete cpacsConfiguration;
         cpacsConfiguration = nullptr;
     }
     setTiglWindowTitle(QString("TiGL Viewer %1").arg(TIGL_MAJOR_VERSION));
+    resetColorSaveButton(); // Reset the icon of the save button to show that the file has not been edited since the last save
+
+    setCurrentFile("");
+    undoStack->clear(); // when the document is closed, we remove all undo
 }
 
 void TIGLViewerWindow::setTiglWindowTitle(const QString &title, bool forceTitle)
@@ -273,8 +318,8 @@ void TIGLViewerWindow::openFile(const QString& fileName)
     bool success;
 
     TIGLViewerScopedCommand command(getConsole());
-    Q_UNUSED(command)
-    statusBar()->showMessage(tr("Invoked File|Open"));
+    Q_UNUSED(command);
+    statusMessage(tr("Invoked File|Open"));
 
     if (!fileName.isEmpty()) {
         fileInfo.setFile(fileName);
@@ -282,14 +327,16 @@ void TIGLViewerWindow::openFile(const QString& fileName)
         
         if (fileType.toLower() == tr("xml")) {
             TIGLViewerDocument* config = new TIGLViewerDocument(this);
-            TiglReturnCode tiglRet = config->openCpacsConfiguration(fileInfo.absoluteFilePath());
+            TiglReturnCode tiglRet = config->openCpacsConfigurationFromFile(fileInfo.absoluteFilePath());
             if (tiglRet != TIGL_SUCCESS) {
                 delete config;
                 return;
             }
             delete cpacsConfiguration;
             cpacsConfiguration = config;
-            
+
+            modificatorManager->setCPACSConfiguration(cpacsConfiguration);
+
             connectConfiguration();
             updateMenus();
             success = true;
@@ -319,10 +366,7 @@ void TIGLViewerWindow::openFile(const QString& fileName)
                 success = reader.importModel ( fileInfo.absoluteFilePath(), format, *getScene() );
             }
         }
-        watcher = new QFileSystemWatcher();
-        watcher->addPath(fileInfo.absoluteFilePath());
-        QObject::connect(watcher, SIGNAL(fileChanged(QString)), openTimer, SLOT(start()));
-        myLastFolder = fileInfo.absolutePath();
+
         if (success) {
             setCurrentFile(fileName);
             myOCC->viewAxo();
@@ -336,53 +380,124 @@ void TIGLViewerWindow::openFile(const QString& fileName)
 
 void TIGLViewerWindow::reopenFile()
 {
-    QString      fileType;
-    QFileInfo    fileInfo;
-
-    fileInfo.setFile(currentFile);
-    fileType = fileInfo.suffix();
-
-    if (fileType.toLower() == tr("xml")){
+    if (currentFile.suffix().toLower() == tr("xml")){
         cpacsConfiguration->updateConfiguration();
+        modificatorManager->setCPACSConfiguration(cpacsConfiguration);
     }
     else {
         myScene->getContext()->EraseAll(Standard_False);
-        openFile(currentFile);
+        openFile(currentFile.absoluteFilePath());
     }
 }
 
-void TIGLViewerWindow::setCurrentFile(const QString &fileName)
+std::string TIGLViewerWindow::readFileContent(char* fileName)
 {
-    setTiglWindowTitle(QString("%2 - TiGL Viewer %1")
-                   .arg(TIGL_MAJOR_VERSION)
-                   .arg(QDir::toNativeSeparators(QFileInfo(fileName).absoluteFilePath())));
+    auto size = std::filesystem::file_size(fileName);
+    std::string content(size, '\0');
+    std::ifstream in(fileName);
+    in.read(&content[0], size);
 
-    currentFile = fileName;
+    return content;
+}
 
-    QSettings settings("DLR SC-HPC", "TiGLViewer3");
-    QStringList files = settings.value("recentFileList").toStringList();
-    files.removeAll(fileName);
-    files.prepend(fileName);
-    while (files.size() > MaxRecentFiles) {
-        files.removeLast();
+void TIGLViewerWindow::openNewFile(const QString& templatePath)
+{
+    QString      fileType;
+    QFileInfo    fileInfo;
+
+    TIGLViewerInputOutput::FileFormat format;
+    TIGLViewerInputOutput reader;
+    bool triangulation = false;
+    bool success;
+
+    TIGLViewerScopedCommand command(getConsole());
+    Q_UNUSED(command);
+    statusMessage(tr("Invoked File|Open New"));
+
+    if (!templatePath.isEmpty()) {
+        fileInfo.setFile(templatePath);
+        fileType = fileInfo.suffix();
+
+        if (fileType.toLower() == tr("xml")) {
+            // Read CPACS template file content into string and open the CPACS configuration from that
+            std::string cpacsFileContent = readFileContent(strdup((const char*)templatePath.toLatin1()));
+
+            TIGLViewerDocument* config = new TIGLViewerDocument(this);
+            TiglReturnCode tiglRet = config->openCpacsConfigurationFromString(cpacsFileContent);
+            if (tiglRet != TIGL_SUCCESS) {
+                delete config;
+                return;
+            }
+            delete cpacsConfiguration;
+            cpacsConfiguration = config;
+
+            modificatorManager->setCPACSConfiguration(cpacsConfiguration);
+
+            connectConfiguration();
+            updateMenus();
+            success = true;
+        }
+
+        if (success) {
+            myOCC->viewAxo();
+            myOCC->fitAll();
+        }
+        else {
+            displayErrorMessage("Error opening file " + templatePath, "Error");
+        }
     }
+}
 
-    settings.setValue("recentFileList", files);
-    settings.setValue("lastFolder", myLastFolder);
+void TIGLViewerWindow::setCurrentFile(const QString& fileName)
+{
+    currentFile.setFile(fileName);
+    delete watcher;
+    watcher = new QFileSystemWatcher();
 
-    updateRecentFileActions();
+    if (currentFile.fileName() != "") {
+
+        setTiglWindowTitle(QString("%2 - CPACS Creator")
+                               .arg(QDir::toNativeSeparators(currentFile.absoluteFilePath())));
+
+        watcher->addPath(currentFile.absoluteFilePath());
+        QObject::connect(watcher, SIGNAL(fileChanged(QString)), openTimer, SLOT(start()));
+
+        QSettings settings("DLR SC-HPC", "CPACS-Creator");
+        QStringList files = settings.value("recentFileList").toStringList();
+        files.removeAll(fileName);
+        files.prepend(fileName);
+        while (files.size() > MaxRecentFiles) {
+            files.removeLast();
+        }
+
+        settings.setValue("recentFileList", files);
+        settings.setValue("lastFolder", myLastFolder);
+        updateRecentFileActions();
+        myLastFolder = currentFile.absolutePath();
+    }
+    else {
+        setTiglWindowTitle(QString("CPACS Creator"));
+    }
 }
 
 void TIGLViewerWindow::loadSettings()
 {
-    QSettings settings("DLR SC-HPC", "TiGLViewer3");
+    QSettings settings("DLR SC-HPC", "CPACS-Creator");
 
     bool showConsole = settings.value("show_console",QVariant(true)).toBool();
+    bool showTree = settings.value("show_tree",QVariant(true)).toBool();
+    bool showModificator = settings.value("show_modificator",QVariant(true)).toBool();
 
     restoreGeometry(settings.value("MainWindowGeom").toByteArray());
     restoreState(settings.value("MainWindowState").toByteArray());
     consoleDockWidget->setVisible(showConsole);
     showConsoleAction->setChecked(showConsole);
+
+    editorDockWidget->setVisible(showModificator);
+    showModificatorAction->setChecked(showModificator);
+
+    treeDockWidget->setVisible(showTree);
+    showTreeAction->setChecked(showTree);
 
     tiglViewerSettings->loadSettings();
     settingsDialog->updateEntries();
@@ -391,10 +506,16 @@ void TIGLViewerWindow::loadSettings()
 
 void TIGLViewerWindow::saveSettings()
 {
-    QSettings settings("DLR SC-HPC", "TiGLViewer3");
+    QSettings settings("DLR SC-HPC", "CPACS-Creator");
 
     bool showConsole = consoleDockWidget->isVisible();
     settings.setValue("show_console", showConsole);
+
+    bool showModificator = editorDockWidget->isVisible();
+    settings.setValue("show_modificator", showModificator);
+
+    bool showTree = treeDockWidget->isVisible();
+    settings.setValue("show_tree", showTree);
 
     settings.setValue("MainWindowGeom", saveGeometry());
     settings.setValue("MainWindowState", saveState());
@@ -416,6 +537,7 @@ void TIGLViewerWindow::applySettings()
     else {
         deleteEnvVar("TIGL_DEBUG_BOP");
     }
+    modificatorManager->updateProfilesDB(tiglViewerSettings->profilesDBPath());
 }
 
 void TIGLViewerWindow::changeSettings()
@@ -432,21 +554,22 @@ TIGLViewerWidget* TIGLViewerWindow::getViewer()
 }
 
 
-void TIGLViewerWindow::save()
+void TIGLViewerWindow::exportDialog()
 {
     QString     fileName;
 
-    statusBar()->showMessage(tr("Invoked File|Save"));
-    fileName = QFileDialog::getSaveFileName(this, tr("Save as..."), myLastFolder,
+    statusBar()->showMessage(tr("Invoked File|Export"));
+    fileName = QFileDialog::getSaveFileName(this, tr("Export as..."), myLastFolder,
                                             tr("IGES Geometry (*.igs);;") +
                                             tr("STEP Geometry (*.stp);;") +
                                             tr("STL Triangulation (*.stl);;") +
-                                            tr("BRep Geometry (*.brep)"));
+                                            tr("BRep Geometry (*.brep);;") +
+                                            tr("All (*)") );
 
     if (!fileName.isEmpty()) {
         TIGLViewerScopedCommand command(getConsole());
         Q_UNUSED(command);
-        saveFile(fileName);
+        exportFile(fileName);
         
         QFileInfo fileInfo;
         fileInfo.setFile(fileName);
@@ -454,7 +577,7 @@ void TIGLViewerWindow::save()
     }
 }
 
-bool TIGLViewerWindow::saveFile(const QString &fileName)
+bool TIGLViewerWindow::exportFile(const QString &fileName)
 {
     TIGLViewerInputOutput::FileFormat format;
     QFileInfo fileInfo;
@@ -474,12 +597,129 @@ bool TIGLViewerWindow::saveFile(const QString &fileName)
         format = TIGLViewerInputOutput::FormatSTL;
     }
     else {
-        LOG(ERROR) << "Unknown file format " << fileType.toStdString();
+        QString errorMsg = "Unknown export file format: \"" + fileType + "\"";
+        LOG(ERROR) << errorMsg.toStdString() ;
+        displayErrorMessage(errorMsg, "Export Error");
         return false;
     }
 
     TIGLViewerInputOutput writer;
     return writer.exportModel ( fileInfo.absoluteFilePath(), format, getScene()->getContext());
+}
+
+void TIGLViewerWindow::save()
+{
+
+    statusMessage(tr("Invoked File|Save"));
+
+    if (currentFile.suffix().toLower() == "xml") {
+
+        if (!cpacsConfiguration->isConfigurationModifiedSinceLastSave()) {
+            LOG(WARNING) << " TIGLViewerWindow::save(): Nothing to save, no changes since last save." << std::endl;
+            return;
+        }
+        saveFile(currentFile.absoluteFilePath());
+    }
+    else if (currentFile.baseName() == "") { // if the file was generated from a template
+        saveAs();
+    }
+    else {
+        QString errorMsg = " TIGLViewerWindow::save(): Saving format is unsupported.";
+        LOG(ERROR) << errorMsg.toStdString();
+        displayErrorMessage(errorMsg, "Save Error");
+    }
+}
+
+void TIGLViewerWindow::saveAs()
+{
+    if (!cpacsConfiguration) {
+        LOG(WARNING) << " TIGLViewerWindow::saveFile(): Nothing to save. " << std::endl;
+        return;
+    }
+
+    statusMessage(tr("Invoked File|Save As"));
+
+    // Use home path as default value for safety if myLastFolder was not set
+    if (myLastFolder == "") {
+        myLastFolder = QDir::homePath();
+    }
+
+    QString fileName =
+        QFileDialog::getSaveFileName(this, tr("Save as..."), myLastFolder, tr("CPACS (*.xml);;") + tr("All (*)"));
+
+    if (!fileName.isEmpty()) {
+
+        if (!fileName.endsWith(".xml")) {
+            QMessageBox msgBox;
+            msgBox.setText("The extension of the given file name is not the CPACS standard extension type \".xml\".\nThis might lead to problems when the file is opened again.");
+            msgBox.setInformativeText("Do you want to continue?");
+            msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Retry);
+            msgBox.setDefaultButton(QMessageBox::Retry);
+            int selection = msgBox.exec();
+            if (selection == QMessageBox::No) {
+                return;
+            }
+            else if(selection == QMessageBox::Retry) {
+                fileName = QFileDialog::getSaveFileName(this, tr("Save as..."),
+                                                        myLastFolder, tr("CPACS (*.xml);;") + tr("All (*)"));
+            }
+            QFileInfo fileInfo;
+            fileInfo.setFile(fileName);
+        }
+
+        TIGLViewerScopedCommand command(getConsole()); // what is it for?
+        Q_UNUSED(command);
+
+        QFileInfo oldFilenameInfo = currentFile;
+        bool fileSaved            = saveFile(fileName);
+        cpacsConfiguration->SetLoadedConfigurationFileName(fileName);
+    }
+    return;
+}
+
+bool TIGLViewerWindow::saveFile(QString fileName)
+{
+
+    if (!cpacsConfiguration || fileName == "") {
+        LOG(WARNING) << " TIGLViewerWindow::saveFile(): Nothing to save. " << std::endl;
+        return false;
+    }
+
+    statusMessage(tr("Invoked File|Save File"));
+
+    // retrieve the content of the current tixi handle
+    TixiDocumentHandle tixiHandle = cpacsConfiguration->GetConfiguration().GetTixiDocumentHandle();
+    std::string tixiContent;
+    try {
+        tixiContent = tixi::TixiExportDocumentAsString(tixiHandle);
+    }
+    catch (const tixi::TixiError& e) {
+        QString errMsg = "TIGLViewerWindow::saveFile() Something went wrong during exporting the file from tixi handler. "
+                         "Tixi error message: \"" +
+                         QString(e.what()) + "\". The file is not saved!";
+        displayErrorMessage(errMsg, "Tixi error");
+        return false;
+    }
+
+    // save the content into the current file
+    QFile file(fileName);
+    if (file.open(QFile::WriteOnly)) { // if file does not exist, open() try to create it
+        delete watcher ; // to remove the current watcher and not call it this time
+        watcher = nullptr;
+        file.resize(0); // delete the content of the file
+        QTextStream out(&file);
+        out << tixiContent.c_str();
+        file.close();
+        setCurrentFile(fileName); // will reset the watcher
+        cpacsConfiguration->configurationSaved(); // Resets modifiedSinceLastSave to check necessity of saving
+        resetColorSaveButton(); // Reset the icon of the save button to show that the file has not been edited since the last save
+        return true;
+    }
+    else {
+        QString errMsg = "TIGLViewerWindow::saveFile(): Error: Unable to write into the file \"" + fileName + "\"";
+        displayErrorMessage(errMsg, "TiGL Error");
+        return false;
+    }
 }
 
 void TIGLViewerWindow::setBackgroundImage()
@@ -515,8 +755,8 @@ void TIGLViewerWindow::about()
     QString tiglVersion(tiglGetVersion());
     QString occtVersion = QString("%1.%2.%3").arg(OCC_VERSION_MAJOR).arg(OCC_VERSION_MINOR).arg(OCC_VERSION_MAINTENANCE);
 
-    text =  "The <b>TiGL Viewer</b> is based on the TiGL library and allows you to view CPACS geometries. ";
-    text += "TiGL Viewer uses the following Open Source libraries:<br/><br/>";
+    text =  "The <b>CPACS Creator</b> is based on the TiGL library and TiGL Viewer and allows you to edit and create CPACS geometries. ";
+    text += "CPACS Creator uses the following Open Source libraries:<br/><br/>";
     
     if (tiglVersion.contains("-r")) {
         QStringList list = tiglVersion.split("-r");
@@ -534,7 +774,7 @@ void TIGLViewerWindow::about()
 
     text += "&copy; 2022 German Aerospace Center (DLR) ";
 
-    QMessageBox::about(this, tr("About TiGL Viewer"), text);
+    QMessageBox::about(this, tr("About CPACS Creator"), text);
 }
 
 void TIGLViewerWindow::aboutQt()
@@ -673,6 +913,8 @@ void TIGLViewerWindow::connectSignals()
     }
 
     connect(saveAction, SIGNAL(triggered()), this, SLOT(save()));
+    connect(saveAsAction, SIGNAL(triggered()), this, SLOT(saveAs()));
+    connect(exportAction, SIGNAL(triggered()), this, SLOT(exportDialog()));
     connect(saveScreenshotAction, SIGNAL(triggered()), this, SLOT(makeScreenShot()));
     connect(setBackgroundAction, SIGNAL(triggered()), this, SLOT(setBackgroundImage()));
     connect(exitAction, SIGNAL(triggered()), this, SLOT(close()));
@@ -719,6 +961,19 @@ void TIGLViewerWindow::connectSignals()
     connect(viewZoomOutAction, SIGNAL(triggered()), myOCC, SLOT(zoomOut()));
     connect(showConsoleAction, SIGNAL(toggled(bool)), consoleDockWidget, SLOT(setVisible(bool)));
     connect(consoleDockWidget, SIGNAL(visibilityChanged(bool)), showConsoleAction, SLOT(setChecked(bool)));
+
+    // Addition for creator
+
+    // modificatorManager will emit a configurationEdited when he modifies the tigl configuration (for later)
+    connect(modificatorManager, SIGNAL(configurationEdited()), this, SLOT(updateScene()));
+    connect(modificatorManager, SIGNAL(configurationEdited()), this, SLOT(changeColorSaveButton()));
+    // creator view
+    connect(showModificatorAction, SIGNAL(toggled(bool)), editorDockWidget, SLOT(setVisible(bool)));
+    connect(editorDockWidget, SIGNAL(visibilityChanged(bool)), showModificatorAction, SLOT(setChecked(bool)));
+    connect(showTreeAction, SIGNAL(toggled(bool)), treeDockWidget, SLOT(setVisible(bool)));
+    connect(treeDockWidget, SIGNAL(visibilityChanged(bool)), showTreeAction, SLOT(setChecked(bool)));
+
+
     connect(showWireframeAction, SIGNAL(toggled(bool)), myScene, SLOT(wireFrame(bool)));
 #if OCC_VERSION_HEX >= VERSION_HEX_CODE(6,7,0)
     connect(showReflectionLinesAction, SIGNAL(toggled(bool)), myScene, SLOT(setReflectionlinesEnabled(bool)));
@@ -759,6 +1014,7 @@ void TIGLViewerWindow::connectSignals()
     redoAction->setShortcuts(QKeySequence::Redo);
     menuEdit->addAction(redoAction);
 
+    connect(standardizeAction, SIGNAL(triggered()),this, SLOT(standardizeDialog()));
 }
 
 void TIGLViewerWindow::createMenus()
@@ -771,7 +1027,7 @@ void TIGLViewerWindow::createMenus()
 
 void TIGLViewerWindow::updateRecentFileActions()
 {
-    QSettings settings("DLR SC-HPC", "TiGLViewer3");
+    QSettings settings("DLR SC-HPC", "CPACS-Creator");
     QStringList files = settings.value("recentFileList").toStringList();
 
     int numRecentFiles = qMin(files.size(), (int)MaxRecentFiles);
@@ -793,6 +1049,7 @@ void TIGLViewerWindow::updateRecentFileActions()
 
 void TIGLViewerWindow::updateMenus()
 {
+    // todo set this settings correctly for save and after .igs is opened
     int nWings = 0;
     int nFuselages = 0;
     int hand = 0;
@@ -852,8 +1109,20 @@ void TIGLViewerWindow::updateMenus()
     menuWings->setEnabled(nWings - nRotorBlades > 0);
 }
 
-void TIGLViewerWindow::closeEvent(QCloseEvent*)
+void TIGLViewerWindow::closeEvent(QCloseEvent* event)
 {
+    // Check whether there were changes in the configuration before asking if the user wants to save
+    if (cpacsConfiguration && cpacsConfiguration->isConfigurationModifiedSinceLastSave()) {
+        int selection = dialogSaveBeforeClose();
+
+        if (selection == QMessageBox::Cancel) {
+            event->ignore();
+            return;
+        }
+        else if (selection == QMessageBox::Yes) {
+            save();
+        }
+    }
     saveSettings();
 }
 
@@ -921,6 +1190,23 @@ void TIGLViewerWindow::drawVector()
     getScene()->displayVector(point, dir, stream.str().c_str(), Standard_True, 0,0,0, 1.);
 }
 
+
+void TIGLViewerWindow::updateScene() {
+    myScene->deleteAllObjects();
+    cpacsConfiguration->drawConfiguration();
+    cpacsConfiguration->configurationModifiedSinceLastSave();
+}
+
+// Color the icon of the save button to show that the file has been edited since the last save
+void TIGLViewerWindow::changeColorSaveButton() {
+    saveAction->setIcon(QIcon(":/gfx/document-save-edited.png"));
+}
+
+// Reset the icon of the save button to show that the file has not been edited since the last save
+void TIGLViewerWindow::resetColorSaveButton() {
+    saveAction->setIcon(QIcon(":/gfx/document-save.png"));
+}
+
 /// This function is copied from QtCoreLib (>5.1)
 /// and is not available in qt4
 bool TIGLViewerWindow::deleteEnvVar(const char * varName)
@@ -943,4 +1229,24 @@ bool TIGLViewerWindow::deleteEnvVar(const char * varName)
     char *envVar = qstrdup(buffer.constData());
     return putenv(envVar) == 0;
 #endif
+}
+
+void TIGLViewerWindow::standardizeDialog()
+{
+    statusBar()->showMessage(tr("Invoked Edit|Standardize"));
+    if (cpacsConfiguration == nullptr || cpacsConfiguration->getCpacsHandle() <= 0) {
+        displayErrorMessage("No components to standardize", "TIGLViewerError");
+        return;
+    }
+
+    tigl::CCPACSConfiguration& config = cpacsConfiguration->GetConfiguration();
+    StandardizeDialog newStdDialog(config, this);
+    if (newStdDialog.exec() == QDialog::Accepted) {
+        if (newStdDialog.isSelectedUIDAFuselage() || newStdDialog.isSelectedUIDAWing()) {
+            modificatorManager->standardize(newStdDialog.getSelectedUID(), newStdDialog.useSimpleDecomposition());
+        }
+        else {
+            modificatorManager->standardize(newStdDialog.useSimpleDecomposition());
+        }
+    }
 }

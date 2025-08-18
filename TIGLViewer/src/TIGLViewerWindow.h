@@ -24,13 +24,14 @@
 
 #include <QMainWindow>
 #include <QUndoStack>
-
 #include "TIGLViewerContext.h"
 #include "TIGLViewerDocument.h"
 #include "tigl.h"
 #include "CSharedPtr.h"
 
 #include "ui_TIGLViewerWindow.h"
+
+#include "ModificatorManager.h"
 
 class QAction;
 class QLabel;
@@ -73,16 +74,24 @@ signals:
 
 public slots:
     void openFile(const QString& fileName);
+    void openNewFile(const QString& templatePath);
     void openScript(const QString& scriptFileName);
-    bool saveFile(const QString& fileName);
+    bool exportFile(const QString &fileName);
+    bool saveFile(QString fileName);
     void closeConfiguration();
     void setTiglWindowTitle(const QString& title, bool forceTitle=false);
+    void changeColorSaveButton();
+    void resetColorSaveButton();
     
     TIGLViewerWidget*   getViewer();
     TIGLViewerContext*  getScene() { return myScene; }
     TIGLViewerSettings*  getViewerSettings() { return tiglViewerSettings; }
     TIGLViewerDocument* getDocument() { return cpacsConfiguration; }
 
+    //update function for modificator
+
+    void updateScene(); 
+    
 private slots:
     void updateMenus();
     void newFile();
@@ -90,7 +99,9 @@ private slots:
     void reopenFile();
     void openScript();
     void openRecentFile();
+    void exportDialog();
     void save();
+    void saveAs();
     void setBackgroundImage();
     void about();
     void aboutQt();
@@ -105,6 +116,7 @@ private slots:
     void makeScreenShot();
     void drawPoint();
     void drawVector();
+    void standardizeDialog();
 
 private:
     void connectSignals();
@@ -112,8 +124,10 @@ private:
     void createMenus();
     void updateRecentFileActions();
     void setCurrentFile(const QString &);
+    std::string readFileContent(char* fileName);
 
-    void closeEvent(QCloseEvent*) override;
+    int dialogSaveBeforeClose();
+    void closeEvent(QCloseEvent* event) override;
     bool deleteEnvVar(const char* varname);
 
     QAction *recentFileActions[MaxRecentFiles];
@@ -124,7 +138,7 @@ private:
     QString                 myLastFolder;
 
     TIGLViewerDocument* cpacsConfiguration;
-    QString currentFile;
+    QFileInfo currentFile;
     QString controlFileName;
     QString preferredTitle;
     QFileSystemWatcher *watcher;
@@ -138,6 +152,8 @@ private:
     class QUndoStack* undoStack;
 
     bool suppressErrors{false};
+
+    ModificatorManager* modificatorManager;
 
 };
 

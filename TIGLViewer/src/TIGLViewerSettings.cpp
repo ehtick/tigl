@@ -22,6 +22,9 @@
 #include <iostream>
 #include <algorithm>
 #include "TIGLViewerMaterials.h"
+#include <QCoreApplication>
+#include <qglobal.h>
+#include "TIGLViewerSettings.h"
 
 const double DEFAULT_TESSELATION_ACCURACY = 0.000316;
 const double DEFAULT_TRIANGULATION_ACCURACY = 0.00070;
@@ -33,6 +36,8 @@ const bool DEFAULT_ENUM_FACES = false;
 const bool DEFAULT_DRAW_FACE_BOUNDARIES = true;
 const int DEFAULT_NISO_FACES = 0;
 
+static QString DEFAULT_TEMPLATE_DIR_PATH = "";
+static QString DEFAULT_PROFILES_FILE_PATH = "";
 
 TIGLViewerSettings& TIGLViewerSettings::Instance()
 {
@@ -42,6 +47,15 @@ TIGLViewerSettings& TIGLViewerSettings::Instance()
 
 TIGLViewerSettings::TIGLViewerSettings()
 {
+    DEFAULT_TEMPLATE_DIR_PATH = QCoreApplication::applicationDirPath();
+    DEFAULT_PROFILES_FILE_PATH = DEFAULT_TEMPLATE_DIR_PATH;
+#ifdef __APPLE__
+    DEFAULT_TEMPLATE_DIR_PATH += "/../Resources/templates";
+    DEFAULT_PROFILES_FILE_PATH += "/../Resources/profiles/profilesDB.xml";
+#else
+    DEFAULT_TEMPLATE_DIR_PATH += "/../share/tigl3/templates";
+    DEFAULT_PROFILES_FILE_PATH += "/../share/tigl3/profiles/profilesDB.xml";
+#endif
     restoreDefaults();
 }
 
@@ -191,6 +205,21 @@ void TIGLViewerSettings::loadSettings()
     _nUIsosPerFace = settings.value("number_uisolines_per_face", 0).toInt();
     _nVIsosPerFace = settings.value("number_visolines_per_face", 0).toInt();
     _drawFaceBoundaries = settings.value("draw_face_boundaries", true).toBool();
+
+    setTemplateDir(settings.value("template_dir_path", DEFAULT_TEMPLATE_DIR_PATH ).toString());
+    _profilesDBPath = settings.value("profiles_file_path", DEFAULT_PROFILES_FILE_PATH).toString();
+
+    // Test whether profilesDB exists in the stored path and if the path even exists in the first place
+    // Background:
+    //      - Path is stored in system-wide config file.
+    //      - If TiGL is built in two different directories, the first one always determines the path
+    //      - However, if this path does not exist anymore, the other TiGL build still tries to use it -> No file found
+    if (!QFile(_profilesDBPath).exists()) {
+        // If stored path does not exist (most likely it lies outside the current build),
+        // use the default path (-> current build) as TiGL internal one and also overwrite the config file
+        _profilesDBPath = DEFAULT_PROFILES_FILE_PATH;
+        settings.setValue("profiles_file_path", _profilesDBPath);
+    }
 }
 
 void TIGLViewerSettings::storeSettings()
@@ -209,6 +238,9 @@ void TIGLViewerSettings::storeSettings()
     settings.setValue("number_uisolines_per_face", _nUIsosPerFace);
     settings.setValue("number_visolines_per_face", _nVIsosPerFace);
     settings.setValue("draw_face_boundaries", _drawFaceBoundaries);
+
+    settings.setValue("template_dir_path", _templateDir.absolutePath());
+    settings.setValue("profiles_file_path", _profilesDBPath);
 }
 
 void TIGLViewerSettings::restoreDefaults()
@@ -224,5 +256,34 @@ void TIGLViewerSettings::restoreDefaults()
     _nVIsosPerFace = DEFAULT_NISO_FACES;
     _drawFaceBoundaries = DEFAULT_DRAW_FACE_BOUNDARIES;
     _defaultMaterial = Graphic3d_NOM_METALIZED;
+    // Possible issue:
+    // restoreDefaults() is called in the constructor
+    // -> the dir will be always create at start up of the application
+    // even if the user has set another dir
+    setTemplateDir(DEFAULT_TEMPLATE_DIR_PATH);
+    _profilesDBPath = DEFAULT_PROFILES_FILE_PATH;
 }
 
+QDir TIGLViewerSettings::templateDir() const
+{
+    return _templateDir;
+}
+
+void TIGLViewerSettings::setTemplateDir(QString path)
+{
+    _templateDir = QDir(path);
+    // create the directory if not exist
+    if (!_templateDir.exists()) {
+        _templateDir.mkpath(_templateDir.absolutePath());
+    }
+}
+
+QString TIGLViewerSettings::profilesDBPath() const
+{
+    return _profilesDBPath;
+}
+
+void TIGLViewerSettings::setProfilesDBPath(QString path)
+{
+    _profilesDBPath = path;  // not check on the file is performed
+}

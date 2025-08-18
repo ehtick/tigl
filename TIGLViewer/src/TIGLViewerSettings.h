@@ -23,6 +23,7 @@
 #include <QMetaType>
 #include <QtCore/QObject>
 #include <Graphic3d_NameOfMaterial.hxx>
+#include <QDir>
 
 class TIGLViewerSettings : public QObject
 {
@@ -53,6 +54,13 @@ public:
 
     void setDefaultMaterial(Graphic3d_NameOfMaterial material);
     Graphic3d_NameOfMaterial defaultMaterial() const;
+
+    QDir templateDir() const;
+    void setTemplateDir(QString path);
+
+    QString profilesDBPath() const;
+    void setProfilesDBPath(QString path);
+
 
     // Debugging Tab
     void setDebugBooleanOperationsEnabled(bool);
@@ -91,6 +99,11 @@ private:
     int  _nUIsosPerFace;
     int  _nVIsosPerFace;
     bool _drawFaceBoundaries;
+
+    QDir _templateDir;
+
+    QString _profilesDBPath;
+
 };
 
 Q_DECLARE_METATYPE(TIGLViewerSettings*)

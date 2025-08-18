@@ -1,5 +1,5 @@
-The TiGL Viewer Console {#tiglviewer_console}
-------------------
+The CPACSCreator Console {#gui_console}
+========================
 
 TiGL Viewer comes with a powerful JavaScript console that allows automatizing small workflows or helps 
 debugging of geometries. To show and hide the console, press __ALT+C__.
@@ -294,7 +294,7 @@ app.viewer.makeScreenshot("image.png");
 _Convert a __STEP__ file into __IGES__ format and close TiGL Viewer_
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.js}
 app.openFile("part.stp");
-app.saveFile("part.igs");
+app.exportFile("part.igs");
 app.close();
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
 

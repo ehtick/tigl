@@ -44,14 +44,33 @@ public:
     explicit TIGLViewerDocument(TIGLViewerWindow *parentWidget);
     ~TIGLViewerDocument( ) override;
 
-    TiglReturnCode openCpacsConfiguration(const QString& fileName);
+    TiglReturnCode openCpacsConfigurationFromFile(const QString& fileName);
+    TiglReturnCode openCpacsConfigurationFromString(const std::string cpacsFileContent);
+    // Empty fileName as default value if the function is called from openCpacsConfigurationFromFile => No fileName exists
+    TiglReturnCode openCpacsConfiguration(TixiDocumentHandle &tixiHandle, const QString &fileName="");
     void closeCpacsConfiguration();
     TiglCPACSConfigurationHandle getCpacsHandle() const;
+    QString GetLoadedConfigurationFileName() const;
+    void SetLoadedConfigurationFileName(const QString& loadedConfigurationFileName);
 
     // Returns the CPACS configuration
     tigl::CCPACSConfiguration& GetConfiguration() const;
 
     void updateFlapTransform(const std::string& controlUID);
+
+    // Reload the TIGLViewerDocument form a string that content the tixi content.
+    // This function needs that a configuration (model) is open. Otherwise it will do nothing.
+    // It try to reopen the same model from the content string.
+    // If there is no model with the same uid it will have a unexpected behavior.
+    // The loadedFileName will not change.
+    // Remark, the tiglConfiguration will change.
+    void updateCpacsConfigurationFromString(const std::string &tixiContent);
+
+    // Take care of boolean variable that stores information whether the configuration was modified since the last save
+    // Only if this is the case, the saveFile() command is invoked
+    void configurationModifiedSinceLastSave();
+    void configurationSaved();
+    bool isConfigurationModifiedSinceLastSave();
 
 signals:
     void documentUpdated(TiglCPACSConfigurationHandle);
@@ -164,6 +183,12 @@ private:
     TiglCPACSConfigurationHandle            m_cpacsHandle;
     TIGLViewerWindow*                       app;
     QString                                 loadedConfigurationFileName;
+
+    // Variable to store information on whether cpacs configuration was modified after last save.
+    // Variable is set to true via TIGLViewerWindow::updateScene implicitely when the SIGNAL undoCommandRequired() is emitted (at the end).
+    // Default value when creating an object of TIGLVieweDocument is false. Reset to default when CPACS file is saved.
+    // Is checked before saving the next time.
+    bool                                    modifiedSinceLastSave;
     class TIGLViewerSelectWingAndFlapStatusDialog* m_flapsDialog;
 
     void writeToStatusBar(const QString& text);
